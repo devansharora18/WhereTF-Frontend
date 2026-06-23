@@ -83,6 +83,7 @@ fn main() {
         .with_cfg(desktop! {
             dioxus_desktop::Config::new()
                 .with_custom_head(css)
+                .with_menu(None)
                 .with_window(
                     dioxus_desktop::WindowBuilder::new()
                         .with_title("WhereTF")
