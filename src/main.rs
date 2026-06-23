@@ -2,6 +2,8 @@ use dioxus::prelude::*;
 
 const BG: Asset = asset!("/assets/bg.png");
 const ARROW: Asset = asset!("/assets/arrow.svg");
+const FILTER: Asset = asset!("/assets/filter.svg");
+const LOGO: Asset = asset!("/assets/logo.svg");
 
 fn main() {
     let css = format!(
@@ -16,10 +18,75 @@ fn main() {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 min-height: 100vh;
             }}
+            .app-layout {{
+                display: flex;
+                height: 100vh;
+            }}
+            .sidebar {{
+                width: 72px;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                background: rgba(15, 15, 20, 0.6);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+                border-right: 1px solid rgba(226, 165, 138, 0.2);
+                flex-shrink: 0;
+            }}
+            .sidebar-logo {{
+                width: 48px;
+                height: 40px;
+                margin-top: 24px;
+            }}
+            .sidebar-buttons {{
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 20px;
+                margin-top: auto;
+                margin-bottom: auto;
+            }}
+            .sidebar-icon-btn {{
+                width: 36px;
+                height: 36px;
+                border: none;
+                background: transparent;
+                cursor: pointer;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: transform 0.2s, opacity 0.2s;
+                opacity: 0.7;
+            }}
+            .sidebar-icon-btn:hover {{
+                transform: scale(1.1);
+                opacity: 1;
+            }}
+            .sidebar-icon-btn.active {{
+                opacity: 1;
+            }}
+            .sidebar-icon {{
+                width: 36px;
+                height: 36px;
+            }}
+            .sidebar-placeholder {{
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                background: rgba(226, 165, 138, 0.2);
+            }}
+            .main-area {{
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding-top: 48px;
+            }}
             .search-wrapper {{
                 display: flex;
                 justify-content: center;
-                padding-top: 32px;
             }}
             .search-bar {{
                 display: flex;
@@ -96,17 +163,35 @@ fn main() {
 
 fn app() -> Element {
     rsx! {
-        div { class: "search-wrapper",
-            div { class: "search-bar",
-                input {
-                    class: "search-input",
-                    r#type: "text",
-                    placeholder: "Search...",
+        div { class: "app-layout",
+            div { class: "sidebar",
+                img { class: "sidebar-logo", src: "{LOGO}" }
+                div { class: "sidebar-buttons",
+                    button { class: "sidebar-icon-btn active",
+                        img { class: "sidebar-icon", src: "{FILTER}" }
+                    }
+                    button { class: "sidebar-icon-btn",
+                        div { class: "sidebar-placeholder" }
+                    }
+                    button { class: "sidebar-icon-btn",
+                        div { class: "sidebar-placeholder" }
+                    }
+                    button { class: "sidebar-icon-btn",
+                        div { class: "sidebar-placeholder" }
+                    }
                 }
-                button { class: "search-btn",
-                    img {
-                        class: "arrow-icon",
-                        src: "{ARROW}",
+            }
+            div { class: "main-area",
+                div { class: "search-wrapper",
+                    div { class: "search-bar",
+                        input {
+                            class: "search-input",
+                            r#type: "text",
+                            placeholder: "Search...",
+                        }
+                        button { class: "search-btn",
+                            img { class: "arrow-icon", src: "{ARROW}" }
+                        }
                     }
                 }
             }
