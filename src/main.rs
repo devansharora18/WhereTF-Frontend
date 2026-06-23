@@ -1,9 +1,13 @@
 use dioxus::prelude::*;
 
+const BG: Asset = asset!("/assets/bg.png");
+
 const DARK_CSS: &str = r#"
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-        background: #0f0f14;
+        background-color: #0f0f14;
+        background-size: cover;
+        background-position: center;
         color: #e0e0e0;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         display: flex;
@@ -27,10 +31,14 @@ const DARK_CSS: &str = r#"
 "#;
 
 fn main() {
+    let css = format!(
+        "<style>body {{ background-image: url('{BG}'); }}{DARK_CSS}</style>"
+    );
+
     dioxus::LaunchBuilder::new()
         .with_cfg(desktop! {
             dioxus_desktop::Config::new()
-                .with_custom_head(format!("<style>{DARK_CSS}</style>"))
+                .with_custom_head(css)
                 .with_window(
                     dioxus_desktop::WindowBuilder::new()
                         .with_title("WhereTF")
