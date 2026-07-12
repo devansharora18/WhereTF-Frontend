@@ -1,3 +1,4 @@
+mod api;
 mod components;
 
 use components::{sidebar::Sidebar, search::SearchBar};
@@ -24,18 +25,82 @@ fn main() {
                     dioxus_desktop::WindowBuilder::new()
                         .with_title("WhereTF")
                         .with_theme(Some(dioxus_desktop::tao::window::Theme::Dark))
-                        .with_inner_size(dioxus_desktop::LogicalSize::new(800.0, 600.0)),
+                        .with_inner_size(dioxus_desktop::LogicalSize::new(960.0, 680.0)),
                 )
         })
         .launch(app);
 }
 
 fn app() -> Element {
+    let mut files = use_signal(Vec::new);
+    let selected_file = use_signal(|| None::<String>);
+    let search_results = use_signal(|| Vec::<api::SearchResult>::new());
+    let mode = use_signal(|| "hybrid".to_string());
+    let uploading = use_signal(|| false);
+
+    let on_search = move |query: String| {
+        let mode = mode.clone();
+        let mut search_results = search_results.clone();
+        spawn(async move {
+            match api::search(&query, &mode(), 10).await {
+                Ok(resp) => search_results.set(resp.results),
+                Err(_) => {}
+            }
+        });
+    };
+
+    let on_upload = {
+        let files = files.clone();
+        let uploading = uploading.clone();
+        move |_| {
+            let mut files = files.clone();
+            let mut uploading = uploading.clone();
+            spawn(async move {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    uploading.set(true);
+                    let path_str = path.to_string_lossy().to_string();
+                    match api::upload_file(&path_str).await {
+                        Ok(_) => {
+                            for _ in 0..8 {
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                if let Ok(f) = api::get_all_files().await {
+                                    files.set(f.clone());
+                                    if !f.is_empty() {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                    uploading.set(false);
+                }
+            });
+        }
+    };
+
+    use_effect(move || {
+        spawn(async move {
+            if let Ok(f) = api::get_all_files().await {
+                files.set(f);
+            }
+        });
+    });
+
     rsx! {
         div { class: "app-layout",
-            Sidebar {}
+            Sidebar {
+                files: files.read().clone(),
+                selected_file: selected_file.clone(),
+                on_upload: on_upload,
+                uploading: uploading(),
+                mode: mode.clone(),
+            }
             div { class: "main-area",
-                SearchBar {}
+                SearchBar {
+                    on_search: on_search,
+                    search_results: search_results.read().clone(),
+                }
             }
         }
     }

@@ -4,6 +4,7 @@
     flex-direction: column;
     align-items: center;
     flex-shrink: 0;
+    position: relative;
 }
 .sidebar-logo {
     width: 48px;
@@ -41,4 +42,112 @@
     height: 20px;
     border-radius: 50%;
     background: rgba(226, 165, 138, 0.2);
+}
+
+.files-panel {
+    position: absolute;
+    left: 72px;
+    top: 0;
+    width: 260px;
+    height: 100vh;
+    background: rgba(15, 15, 20, 0.95);
+    backdrop-filter: blur(16px);
+    border-right: 1px solid rgba(226, 165, 138, 0.2);
+    padding: 20px;
+    overflow-y: auto;
+    z-index: 10;
+}
+.files-panel-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(226, 165, 138, 0.9);
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.files-empty {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: center;
+    padding: 24px 0;
+}
+.file-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: rgba(226, 165, 138, 0.06);
+    border: 1px solid rgba(226, 165, 138, 0.08);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.file-item:hover {
+    background: rgba(226, 165, 138, 0.12);
+    border-color: rgba(226, 165, 138, 0.2);
+}
+.file-name {
+    font-size: 12px;
+    color: #e0e0e0;
+    margin-bottom: 6px;
+    word-break: break-all;
+}
+.file-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.file-context {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+}
+.file-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(226, 165, 138, 0.15);
+    color: rgba(226, 165, 138, 0.8);
+}
+
+.upload-btn {
+    width: 100%;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    border: 1px dashed rgba(226, 165, 138, 0.3);
+    border-radius: 8px;
+    background: rgba(226, 165, 138, 0.06);
+    color: rgba(226, 165, 138, 0.8);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.upload-btn:hover {
+    background: rgba(226, 165, 138, 0.14);
+    border-color: rgba(226, 165, 138, 0.5);
+}
+.upload-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.filter-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.filter-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(226, 165, 138, 0.05);
+    cursor: pointer;
+    font-size: 13px;
+    color: #e0e0e0;
+    transition: all 0.15s;
+}
+.filter-option:hover {
+    background: rgba(226, 165, 138, 0.12);
+}
+.filter-option input[type="radio"] {
+    accent-color: rgba(226, 165, 138, 0.8);
 }
