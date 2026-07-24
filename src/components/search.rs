@@ -1,5 +1,6 @@
 use crate::api::SearchResult;
 use dioxus::prelude::*;
+use std::path::Path;
 
 const ARROW: Asset = asset!("/assets/arrow.svg");
 
@@ -7,6 +8,7 @@ const ARROW: Asset = asset!("/assets/arrow.svg");
 pub struct SearchBarProps {
     pub on_search: EventHandler<String>,
     pub search_results: Vec<SearchResult>,
+    pub on_open_file: EventHandler<String>,
 }
 
 #[component]
@@ -53,7 +55,17 @@ pub fn SearchBar(props: SearchBarProps) -> Element {
             if !props.search_results.is_empty() {
                 div { class: "search-results",
                     for result in &props.search_results {
-                        div { class: "result-item",
+                        div {
+                            class: "result-item",
+                            onclick: {
+                                let name = Path::new(&result.file_path)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let handler = props.on_open_file.clone();
+                                move |_| handler.call(name.clone())
+                            },
                             div { class: "result-path", "{result.file_path}" }
                             div { class: "result-content", "{result.content}" }
                             div { class: "result-score", "Score: {result.score:.4}" }

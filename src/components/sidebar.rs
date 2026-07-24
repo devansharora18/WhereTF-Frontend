@@ -1,5 +1,6 @@
 use crate::api::IndexedFile;
 use dioxus::prelude::*;
+use std::path::Path;
 
 const LOGO: Asset = asset!("/assets/logo.svg");
 const FILTER: Asset = asset!("/assets/filter.svg");
@@ -12,6 +13,7 @@ pub struct SidebarProps {
     pub on_upload: EventHandler<()>,
     pub uploading: bool,
     pub mode: Signal<String>,
+    pub on_open_file: EventHandler<String>,
 }
 
 #[component]
@@ -111,9 +113,13 @@ pub fn Sidebar(props: SidebarProps) -> Element {
                                 class: "file-item",
                                 key: "{file.id}",
                                 onclick: {
-                                    let id = file.id.clone();
-                                    let mut selected = props.selected_file.clone();
-                                    move |_| selected.set(Some(id.clone()))
+                                    let name = Path::new(&file.file_path)
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let handler = props.on_open_file.clone();
+                                    move |_| handler.call(name.clone())
                                 },
                                 div { class: "file-name", "{file.file_path}" }
                                 div { class: "file-meta",
