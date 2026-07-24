@@ -2,20 +2,19 @@ mod api;
 mod components;
 
 use std::collections::HashMap;
-
-use components::{sidebar::Sidebar, search::SearchBar};
+use std::time::Instant;
+use components::{header::Header, step_rail::StepRail, search_screen::SearchScreen, results_screen::ResultsScreen};
 use dioxus::prelude::*;
 
-const BG: Asset = asset!("/assets/bg.png");
-
 fn main() {
-    let global_css = include_str!("style.css");
-    let sidebar_css = include_str!("components/sidebar.css");
-    let search_css = include_str!("components/search.css");
-    let bg_url = format!("background-image: url('{BG}'); background-color: #0f0f14; background-size: cover; background-position: center;");
-
     let css = format!(
-        "<style>{global_css} body {{ {bg_url} }} {sidebar_css}{search_css}</style>"
+        "<style>{}{}{}{}{}{}</style>",
+        include_str!("style.css"),
+        include_str!("components/header.css"),
+        include_str!("components/step_rail.css"),
+        include_str!("components/search_screen.css"),
+        include_str!("components/results_screen.css"),
+        format!("body {{ background: #050606; }}")
     );
 
     dioxus::LaunchBuilder::new()
@@ -25,32 +24,89 @@ fn main() {
                 .with_menu(None)
                 .with_window(
                     dioxus_desktop::WindowBuilder::new()
-                        .with_title("WhereTF")
+                        .with_title("whereTF")
                         .with_theme(Some(dioxus_desktop::tao::window::Theme::Dark))
-                        .with_inner_size(dioxus_desktop::LogicalSize::new(960.0, 680.0)),
+                        .with_inner_size(dioxus_desktop::LogicalSize::new(1100.0, 750.0)),
                 )
         })
         .launch(app);
 }
 
 fn app() -> Element {
-    let mut files = use_signal(Vec::new);
-    let selected_file = use_signal(|| None::<String>);
+    let files = use_signal(Vec::new);
     let search_results = use_signal(|| Vec::<api::SearchResult>::new());
     let mode = use_signal(|| "hybrid".to_string());
     let uploading = use_signal(|| false);
     let file_paths = use_signal(HashMap::<String, String>::new);
+    let active_step = use_signal(|| 1u8);
+    let query_text = use_signal(String::new);
+    let search_time = use_signal(|| 0.0);
+    let file_count = use_signal(|| 0u64);
+    let search_query = use_signal(String::new);
+    let upload_trigger = use_signal(|| 0i32);
 
-    let on_search = move |query: String| {
-        let mode = mode.clone();
+    use_effect(move || {
+        let q = search_query.read().clone();
+        if q.is_empty() { return; }
+        let mode = mode.read().clone();
         let mut search_results = search_results.clone();
+        let mut search_time = search_time.clone();
+        let mut active_step = active_step.clone();
+        let mut query_text = query_text.clone();
+        query_text.set(q.clone());
         spawn(async move {
-            match api::search(&query, &mode(), 10).await {
-                Ok(resp) => search_results.set(resp.results),
+            let start = Instant::now();
+            match api::search(&q, &mode, 10).await {
+                Ok(resp) => {
+                    search_time.set(start.elapsed().as_secs_f64());
+                    search_results.set(resp.results);
+                    active_step.set(2);
+                }
                 Err(_) => {}
             }
         });
-    };
+    });
+
+    use_effect(move || {
+        let count = upload_trigger();
+        if count <= 0 { return; }
+        if uploading() { return; }
+        let mut uploading = uploading.clone();
+        let mut files = files.clone();
+        let mut file_paths = file_paths.clone();
+        spawn(async move {
+            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                uploading.set(true);
+                let path_str = path.to_string_lossy().to_string();
+                let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                file_paths.set({
+                    let mut m = file_paths.peek().clone();
+                    m.insert(filename, path_str.clone());
+                    m
+                });
+                let _ = api::upload_file(&path_str).await;
+                for _ in 0..8 {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    if let Ok(f) = api::get_all_files().await {
+                        files.set(f.clone());
+                        if !f.is_empty() { break; }
+                    }
+                }
+                uploading.set(false);
+            }
+        });
+    });
+
+    use_effect(move || {
+        let mut files = files.clone();
+        let mut file_count = file_count.clone();
+        spawn(async move {
+            if let Ok(f) = api::get_all_files().await {
+                file_count.set(f.len() as u64);
+                files.set(f);
+            }
+        });
+    });
 
     let on_open_file = use_callback(move |filename: String| {
         let p = file_paths.read().get(&filename).cloned();
@@ -59,67 +115,39 @@ fn app() -> Element {
         }
     });
 
-    let on_upload = {
-        let files = files.clone();
-        let uploading = uploading.clone();
-        let file_paths = file_paths.clone();
-        move |_| {
-            let mut files = files.clone();
-            let mut uploading = uploading.clone();
-            let mut file_paths = file_paths.clone();
-            spawn(async move {
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    uploading.set(true);
-                    let path_str = path.to_string_lossy().to_string();
-                    let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                    file_paths.set({
-                        let mut m = file_paths.peek().clone();
-                        m.insert(filename, path_str.clone());
-                        m
-                    });
-                    match api::upload_file(&path_str).await {
-                        Ok(_) => {
-                            for _ in 0..8 {
-                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                if let Ok(f) = api::get_all_files().await {
-                                    files.set(f.clone());
-                                    if !f.is_empty() {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        Err(_) => {}
-                    }
-                    uploading.set(false);
-                }
-            });
-        }
+    let view_label = if active_step() == 1 {
+        "/ 01 \u{00B7} SEARCH".to_string()
+    } else {
+        "/ 02 \u{00B7} RESULTS".to_string()
     };
 
-    use_effect(move || {
-        spawn(async move {
-            if let Ok(f) = api::get_all_files().await {
-                files.set(f);
-            }
-        });
-    });
-
     rsx! {
-        div { class: "app-layout",
-            Sidebar {
-                files: files.read().clone(),
-                selected_file: selected_file.clone(),
-                on_upload: on_upload,
-                uploading: uploading(),
-                mode: mode.clone(),
-                on_open_file: on_open_file.clone(),
-            }
-            div { class: "main-area",
-                SearchBar {
-                    on_search: on_search,
-                    search_results: search_results.read().clone(),
-                    on_open_file: on_open_file.clone(),
+        div { id: "main",
+            div { class: "app-shell",
+                Header { view_label: view_label }
+                div { class: "app-body",
+                    StepRail {
+                        active_step: active_step(),
+                        go_search: active_step.clone(),
+                        search_results: search_results.clone(),
+                    }
+                    div { class: "app-content",
+                        if active_step() == 1 {
+                            SearchScreen {
+                                on_search: search_query.clone(),
+                                file_count: file_count(),
+                                avg_time: 0.04,
+                                upload_trigger: upload_trigger.clone(),
+                            }
+                        } else {
+                            ResultsScreen {
+                                query: query_text.read().clone(),
+                                search_time: search_time(),
+                                results: search_results.read().clone(),
+                                on_open_file: on_open_file.clone(),
+                            }
+                        }
+                    }
                 }
             }
         }
