@@ -49,10 +49,11 @@ pub struct DeleteResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthResponse {
-    pub status: String,
-    pub service: String,
-    pub database_connected: bool,
+pub struct RelatedFile {
+    pub file_id: String,
+    pub file_path: String,
+    pub similarity_score: f64,
+    pub relation_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,48 +64,28 @@ pub struct MetadataPayload {
     pub context: Option<String>,
 }
 
-pub async fn upload_file(file_path: &str) -> Result<UploadResponse, String> {
-    let url = format!("{}/upload/", BASE_URL);
-    let file_data = std::fs::read(file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-    let filename = std::path::Path::new(file_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let part = reqwest::multipart::Part::bytes(file_data)
-        .file_name(filename)
-        .mime_str("application/octet-stream")
-        .map_err(|e| format!("Failed to create multipart part: {}", e))?;
-
-    let form = reqwest::multipart::Form::new().part("file", part);
-
-    let client = reqwest::Client::new();
-    client
-        .post(&url)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| format!("Upload request failed: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse upload response: {}", e))
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchFolderResponse {
+    pub status: String,
+    pub message: String,
+    pub folder_path: Option<String>,
 }
 
-pub async fn health_check() -> Result<HealthResponse, String> {
-    let url = format!("{}/health", BASE_URL);
-    reqwest::get(&url)
-        .await
-        .map_err(|e| format!("Health check failed: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse health response: {}", e))
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchedFolder {
+    pub folder_path: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileCheckResult {
+    pub needs_indexing: bool,
+    pub message: String,
 }
 
 pub async fn search(query: &str, mode: &str, top_k: u32) -> Result<SearchResponse, String> {
     let url = format!(
-        "{}/search/?query={}&mode={}&top_k={}",
+        "{}/search/normal/?query={}&mode={}&top_k={}",
         BASE_URL,
         urlencoding(query),
         urlencoding(mode),
@@ -119,6 +100,56 @@ pub async fn search(query: &str, mode: &str, top_k: u32) -> Result<SearchRespons
         .json()
         .await
         .map_err(|e| format!("Failed to parse search response: {}", e))
+}
+
+pub async fn power_search(query: &str, mode: &str, top_k: u32) -> Result<SearchResponse, String> {
+    let url = format!(
+        "{}/search/power/?query={}&mode={}&top_k={}",
+        BASE_URL,
+        urlencoding(query),
+        urlencoding(mode),
+        top_k
+    );
+    let client = reqwest::Client::new();
+    client
+        .post(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Power search request failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse power search response: {}", e))
+}
+
+pub async fn upload_file(file_path: &str) -> Result<UploadResponse, String> {
+    let url = format!("{}/upload/", BASE_URL);
+    let file_data = std::fs::read(file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let filename = std::path::Path::new(file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let file_part = reqwest::multipart::Part::bytes(file_data)
+        .file_name(filename)
+        .mime_str("application/octet-stream")
+        .map_err(|e| format!("Failed to create multipart part: {}", e))?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("original_path", file_path.to_string());
+
+    let client = reqwest::Client::new();
+    client
+        .post(&url)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload request failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse upload response: {}", e))
 }
 
 pub async fn get_all_files() -> Result<Vec<IndexedFile>, String> {
@@ -144,21 +175,80 @@ pub async fn delete_file(file_id: &str) -> Result<DeleteResponse, String> {
         .map_err(|e| format!("Failed to parse delete response: {}", e))
 }
 
-pub async fn update_metadata(
-    file_id: &str,
-    payload: &MetadataPayload,
-) -> Result<MetadataUpdate, String> {
-    let url = format!("{}/files/{}", BASE_URL, file_id);
+pub async fn delete_file_by_path(file_path: &str) -> Result<DeleteResponse, String> {
+    let url = format!("{}/files/delete-by-path", BASE_URL);
     let client = reqwest::Client::new();
     client
-        .patch(&url)
-        .json(payload)
+        .post(&url)
+        .json(&serde_json::json!({ "file_path": file_path }))
         .send()
         .await
-        .map_err(|e| format!("Update metadata failed: {}", e))?
+        .map_err(|e| format!("Delete by path failed: {}", e))?
         .json()
         .await
-        .map_err(|e| format!("Failed to parse metadata response: {}", e))
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+pub async fn rename_file(old_path: &str, new_path: &str) -> Result<DeleteResponse, String> {
+    let url = format!("{}/files/rename", BASE_URL);
+    let client = reqwest::Client::new();
+    client
+        .post(&url)
+        .json(&serde_json::json!({ "old_path": old_path, "new_path": new_path }))
+        .send()
+        .await
+        .map_err(|e| format!("Rename failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+pub async fn get_related_files(file_id: &str) -> Result<Vec<RelatedFile>, String> {
+    let url = format!("{}/files/{}/related", BASE_URL, file_id);
+    reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Failed to fetch related files: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+pub async fn add_watch_folder(folder_path: &str) -> Result<WatchFolderResponse, String> {
+    let url = format!("{}/watch/folder", BASE_URL);
+    let client = reqwest::Client::new();
+    client
+        .post(&url)
+        .json(&serde_json::json!({ "folder_path": folder_path }))
+        .send()
+        .await
+        .map_err(|e| format!("Watch folder failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+pub async fn remove_watch_folder(folder_path: &str) -> Result<WatchFolderResponse, String> {
+    let url = format!("{}/watch/folder", BASE_URL);
+    let client = reqwest::Client::new();
+    client
+        .delete(&url)
+        .json(&serde_json::json!({ "folder_path": folder_path }))
+        .send()
+        .await
+        .map_err(|e| format!("Remove watch folder failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+pub async fn get_watched_folders() -> Result<Vec<WatchedFolder>, String> {
+    let url = format!("{}/watch/folders", BASE_URL);
+    reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Failed to fetch watched folders: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
 fn urlencoding(s: &str) -> String {

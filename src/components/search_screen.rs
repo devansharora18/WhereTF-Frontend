@@ -10,33 +10,12 @@ pub struct SearchScreenProps {
 
 #[component]
 pub fn SearchScreen(props: SearchScreenProps) -> Element {
-    let mut query = use_signal(String::new);
-
     rsx! {
         div { class: "search-screen",
             div { class: "search-heading", "Search your files." }
-            div { class: "search-input-row",
-                input {
-                    class: "search-field",
-                    r#type: "text",
-                    placeholder: "type to search",
-                    value: "{query}",
-                    autofocus: true,
-                    oninput: move |e| query.set(e.value()),
-                    onkeydown: {
-                        let q = query.clone();
-                        let mut os = props.on_search.clone();
-                        move |e| {
-                            if e.key() == Key::Enter {
-                                let v = q.read().clone();
-                                if !v.trim().is_empty() {
-                                    os.set(v);
-                                }
-                            }
-                        }
-                    },
-                }
-                span { class: "shortcut-hint", "\u{2318}K" }
+            super::search_bar::SearchBar {
+                on_search: props.on_search.clone(),
+                placeholder: "type to search".to_string(),
             }
             div { class: "search-stats",
                 span { "{props.file_count} FILES INDEXED" }
@@ -47,10 +26,7 @@ pub fn SearchScreen(props: SearchScreenProps) -> Element {
                     class: "upload-link",
                     onclick: {
                         let mut ut = props.upload_trigger.clone();
-                        move |_| {
-                            let v = *ut.peek();
-                            ut.set(v + 1);
-                        }
+                        move |_| { let v = *ut.peek(); ut.set(v + 1); }
                     },
                     "+ add files"
                 }

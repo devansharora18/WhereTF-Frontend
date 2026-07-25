@@ -3,17 +3,20 @@ mod components;
 
 use std::collections::HashMap;
 use std::time::Instant;
-use components::{header::Header, step_rail::StepRail, search_screen::SearchScreen, results_screen::ResultsScreen};
+use components::{header::Header, step_rail::StepRail, search_screen::SearchScreen, results_screen::ResultsScreen, filters_panel::FiltersPanel, files_panel::FilesPanel};
 use dioxus::prelude::*;
 
 fn main() {
     let css = format!(
-        "<style>{}{}{}{}{}{}</style>",
+        "<style>{}{}{}{}{}{}{}{}{}</style>",
         include_str!("style.css"),
         include_str!("components/header.css"),
         include_str!("components/step_rail.css"),
+        include_str!("components/search_bar.css"),
         include_str!("components/search_screen.css"),
         include_str!("components/results_screen.css"),
+        include_str!("components/filters_panel.css"),
+        include_str!("components/files_panel.css"),
         format!("body {{ background: #050606; }}")
     );
 
@@ -51,7 +54,6 @@ fn app() -> Element {
         let mode = mode.read().clone();
         let mut search_results = search_results.clone();
         let mut search_time = search_time.clone();
-        let mut active_step = active_step.clone();
         let mut query_text = query_text.clone();
         query_text.set(q.clone());
         spawn(async move {
@@ -60,7 +62,6 @@ fn app() -> Element {
                 Ok(resp) => {
                     search_time.set(start.elapsed().as_secs_f64());
                     search_results.set(resp.results);
-                    active_step.set(2);
                 }
                 Err(_) => {}
             }
@@ -73,6 +74,7 @@ fn app() -> Element {
         if uploading() { return; }
         let mut uploading = uploading.clone();
         let mut files = files.clone();
+        let mut file_count = file_count.clone();
         let mut file_paths = file_paths.clone();
         spawn(async move {
             if let Some(path) = rfd::FileDialog::new().pick_file() {
@@ -88,6 +90,7 @@ fn app() -> Element {
                 for _ in 0..8 {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     if let Ok(f) = api::get_all_files().await {
+                        file_count.set(f.len() as u64);
                         files.set(f.clone());
                         if !f.is_empty() { break; }
                     }
@@ -115,10 +118,11 @@ fn app() -> Element {
         }
     });
 
-    let view_label = if active_step() == 1 {
-        "/ 01 \u{00B7} SEARCH".to_string()
-    } else {
-        "/ 02 \u{00B7} RESULTS".to_string()
+    let view_label = match active_step() {
+        1 => "/ 01 \u{00B7} SEARCH".to_string(),
+        2 => "/ 02 \u{00B7} FILTERS".to_string(),
+        3 => "/ 03 \u{00B7} FILES".to_string(),
+        _ => "/ \u{00B7}".to_string(),
     };
 
     rsx! {
@@ -128,22 +132,35 @@ fn app() -> Element {
                 div { class: "app-body",
                     StepRail {
                         active_step: active_step(),
-                        go_search: active_step.clone(),
-                        search_results: search_results.clone(),
+                        active_setter: active_step.clone(),
                     }
                     div { class: "app-content",
                         if active_step() == 1 {
-                            SearchScreen {
-                                on_search: search_query.clone(),
-                                file_count: file_count(),
-                                avg_time: 0.04,
-                                upload_trigger: upload_trigger.clone(),
+                            if search_results.read().is_empty() {
+                                SearchScreen {
+                                    on_search: search_query.clone(),
+                                    file_count: file_count(),
+                                    avg_time: 0.04,
+                                    upload_trigger: upload_trigger.clone(),
+                                }
+                            } else {
+                                ResultsScreen {
+                                    query: query_text.read().clone(),
+                                    search_time: search_time(),
+                                    results: search_results.read().clone(),
+                                    on_open_file: on_open_file.clone(),
+                                    on_search: search_query.clone(),
+                                }
                             }
-                        } else {
-                            ResultsScreen {
-                                query: query_text.read().clone(),
-                                search_time: search_time(),
-                                results: search_results.read().clone(),
+                        } else if active_step() == 2 {
+                            FiltersPanel {
+                                mode: mode.clone(),
+                            }
+                        } else if active_step() == 3 {
+                            FilesPanel {
+                                files: files.read().clone(),
+                                uploading: uploading(),
+                                upload_trigger: upload_trigger.clone(),
                                 on_open_file: on_open_file.clone(),
                             }
                         }

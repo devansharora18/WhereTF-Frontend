@@ -1,27 +1,14 @@
 .results-screen {
-    padding-top: 40px;
+    padding-top: 0;
 }
 
-.results-query-row {
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid var(--accent);
-    padding-bottom: 8px;
-    margin-bottom: 40px;
-}
-
-.results-query-text {
+.results-time {
     font-family: var(--font-mono);
-    font-size: 17px;
-    color: var(--text-primary);
-}
-
-.results-query-time {
-    font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-secondary);
-    margin-left: auto;
-    flex-shrink: 0;
+    text-align: right;
+    margin-top: 4px;
+    margin-bottom: 28px;
 }
 
 .primary-result {
