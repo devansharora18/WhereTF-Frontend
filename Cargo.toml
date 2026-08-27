@@ -3,12 +3,24 @@ name = "wheretf-frontend"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+bundled-backend = []
+
 [dependencies]
 dioxus = { version = "0.7.9", features = ["desktop"] }
 dioxus-desktop = { version = "0.7.9", default-features = false, features = ["devtools", "dioxus-signals", "tokio_runtime"] }
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "blocking"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rfd = "0.15"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "fs"] }
 open = "5"
+notify = "6.1"
+sha2 = "0.10"
+hex = "0.4"
+walkdir = "2"
+global-hotkey = "0.6"
+dirs = "5"
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
+futures = "0.3"
