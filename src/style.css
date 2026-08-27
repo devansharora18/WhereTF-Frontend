@@ -47,3 +47,76 @@ body {
     padding-left: 60px;
     overflow-y: auto;
 }
+#spotlight-root {
+    width: 100vw;
+    height: 100vh;
+    background: transparent;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 20vh;
+}
+.spotlight-keysink {
+    position: fixed;
+    inset: 0;
+    outline: none;
+}
+.spotlight-box {
+    background: #1c2020;
+    border: 1px solid rgba(119, 114, 103, 0.3);
+    border-radius: 12px;
+    width: 600px;
+    max-width: 90vw;
+    padding: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.spotlight-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    opacity: 0.7;
+}
+.spotlight-results {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.spotlight-result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.spotlight-result-row:hover {
+    background: rgba(185, 85, 54, 0.1);
+}
+.spotlight-result-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-primary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.spotlight-result-score {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin-left: 12px;
+}
+.spotlight-hint {
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    text-align: center;
+}
