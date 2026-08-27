@@ -41,9 +41,9 @@ pub fn ResultsScreen(props: ResultsScreenProps) -> Element {
                     div {
                         class: "primary-result-path",
                         onclick: {
-                            let name = file_name(&best.file_path);
+                            let path = best.file_path.clone();
                             let h = props.on_open_file.clone();
-                            move |_| h.call(name.clone())
+                            move |_| h.call(path.clone())
                         },
                         "{best.file_path}"
                     }
@@ -58,9 +58,9 @@ pub fn ResultsScreen(props: ResultsScreenProps) -> Element {
                     div {
                         class: "result-row",
                         onclick: {
-                            let name = file_name(&r.file_path);
+                            let path = r.file_path.clone();
                             let h = props.on_open_file.clone();
-                            move |_| h.call(name.clone())
+                            move |_| h.call(path.clone())
                         },
                         div { class: "result-row-name", "{file_name(&r.file_path)}" }
                         div { class: "result-row-score", "{score_fmt(r.score)}%" }

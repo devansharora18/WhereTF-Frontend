@@ -31,13 +31,9 @@ pub fn FilesPanel(props: FilesPanelProps) -> Element {
                         class: "panel-file-row",
                         key: "{file.id}",
                         onclick: {
-                            let name = Path::new(&file.file_path)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("")
-                                .to_string();
+                            let path = file.file_path.clone();
                             let handler = props.on_open_file.clone();
-                            move |_| handler.call(name.clone())
+                            move |_| handler.call(path.clone())
                         },
                         div { class: "panel-file-name", "{file.file_path}" }
                         div { class: "panel-file-type", "{file.mime_type}" }
