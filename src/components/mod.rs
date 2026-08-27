@@ -5,3 +5,5 @@ pub mod search_screen;
 pub mod results_screen;
 pub mod filters_panel;
 pub mod files_panel;
+pub mod watchdog_panel;
+pub mod spotlight_window;

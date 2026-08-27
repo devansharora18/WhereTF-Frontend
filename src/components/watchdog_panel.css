@@ -1,0 +1,70 @@
+.watchdog-panel {
+    padding-top: 48px;
+    max-width: 520px;
+}
+
+.watchdog-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(119, 114, 103, 0.2);
+}
+
+.watchdog-path {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-secondary);
+    flex: 1;
+    word-break: break-all;
+}
+
+.watchdog-status {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--accent);
+    flex-shrink: 0;
+    margin-left: 20px;
+}
+.watchdog-status.paused {
+    color: #888;
+    opacity: 0.7;
+}
+.watchdog-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.watchdog-btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 6px 10px;
+    border: 1px solid rgba(119, 114, 103, 0.3);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+.watchdog-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.watchdog-btn-small {
+    font-size: 10px;
+    padding: 4px 8px;
+    margin-left: 8px;
+}
+.watchdog-btn-danger {
+    border-color: rgba(255, 107, 107, 0.3);
+    color: #ff6b6b;
+}
+.watchdog-btn-danger:hover {
+    border-color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+}
+.watchdog-btn-pause {
+    border-color: rgba(255, 193, 7, 0.3);
+    color: #ffc107;
+}
