@@ -16,6 +16,10 @@ pub struct SearchResponse {
     pub query: String,
     pub mode: String,
     pub results: Vec<SearchResult>,
+    #[serde(default)]
+    pub expanded_query: Option<String>,
+    #[serde(default)]
+    pub search_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -26,6 +30,14 @@ pub struct IndexedFile {
     pub tags: Vec<String>,
     pub context: Option<String>,
     pub last_modified: String,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FilesWrapper {
+    pub status: String,
+    pub count: usize,
+    pub data: Vec<IndexedFile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +45,8 @@ pub struct UploadResponse {
     pub status: String,
     pub message: String,
     pub filename: String,
+    #[serde(default)]
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,21 +80,36 @@ pub struct MetadataPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatchFolderResponse {
-    pub status: String,
-    pub message: String,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub success: Option<bool>,
+    #[serde(default)]
     pub folder_path: Option<String>,
+    #[serde(default)]
+    pub id: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WatchedFolder {
+    pub id: i64,
     pub folder_path: String,
-    pub status: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCheckResult {
     pub needs_indexing: bool,
-    pub message: String,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeedsIndexingRequest {
+    pub file_path: String,
+    pub file_hash: String,
 }
 
 pub async fn search(query: &str, mode: &str, top_k: u32) -> Result<SearchResponse, String> {
@@ -154,12 +183,13 @@ pub async fn upload_file(file_path: &str) -> Result<UploadResponse, String> {
 
 pub async fn get_all_files() -> Result<Vec<IndexedFile>, String> {
     let url = format!("{}/files/", BASE_URL);
-    reqwest::get(&url)
+    let wrapper: FilesWrapper = reqwest::get(&url)
         .await
         .map_err(|e| format!("Failed to fetch files: {}", e))?
         .json()
         .await
-        .map_err(|e| format!("Failed to parse files response: {}", e))
+        .map_err(|e| format!("Failed to parse files response: {}", e))?;
+    Ok(wrapper.data)
 }
 
 pub async fn delete_file(file_id: &str) -> Result<DeleteResponse, String> {
@@ -249,6 +279,24 @@ pub async fn get_watched_folders() -> Result<Vec<WatchedFolder>, String> {
         .json()
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+pub async fn needs_indexing(file_path: &str, file_hash: &str) -> Result<bool, String> {
+    let url = format!("{}/files/needs-indexing", BASE_URL);
+    let client = reqwest::Client::new();
+    let resp: FileCheckResult = client
+        .post(&url)
+        .json(&NeedsIndexingRequest {
+            file_path: file_path.to_string(),
+            file_hash: file_hash.to_string(),
+        })
+        .send()
+        .await
+        .map_err(|e| format!("needs_indexing request failed: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse needs_indexing response: {}", e))?;
+    Ok(resp.needs_indexing)
 }
 
 fn urlencoding(s: &str) -> String {
