@@ -1,0 +1,25 @@
+[application]
+name = "WhereTF"
+out_dir = "dist"
+platforms = ["desktop"]
+
+[web.app]
+base_path = "/"
+
+[bundle]
+identifier = "com.wheretf.app"
+publisher = "GDSC VIT"
+icon = ["assets/icon.png"]
+resources = ["WhereTF-backend"]
+category = "Utility"
+short_description = "AI-powered file search"
+long_description = "WhereTF is an AI-powered file search tool"
+
+[bundle.linux]
+deb_depends = ["podman", "podman-compose"]
+
+[bundle.windows]
+wix_upgrade_code = "12345678-1234-1234-1234-123456789012"
+
+[bundle.macos]
+minimum_system_version = "10.13"
