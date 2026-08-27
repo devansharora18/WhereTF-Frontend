@@ -32,3 +32,41 @@
 .upload-link:hover {
     opacity: 0.8;
 }
+.power-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    font-family: var(--font-mono);
+}
+.power-toggle-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+}
+.power-toggle-btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid rgba(119, 114, 103, 0.3);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 12px;
+    min-width: 40px;
+    transition: all 0.15s;
+}
+.power-toggle-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+.power-toggle-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+.power-toggle-section {
+    margin-top: 16px;
+}
