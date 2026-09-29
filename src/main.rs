@@ -451,26 +451,37 @@ fn app() -> Element {
     let spotlight_trigger = use_hook(move || {
         let (tx, rx) = std::sync::mpsc::channel::<()>();
 
-        // UI-side poller: forward triggers to the spotlight_visible signal.
+        // UI-side poller: coalesce + debounce triggers, then toggle once.
         let mut spotlight_visible = spotlight_visible.clone();
         let mut active_step = active_step.clone();
         let mut search_query = search_query.clone();
         let mut search_results = search_results.clone();
         spawn(async move {
+            let mut last = std::time::Instant::now() - std::time::Duration::from_secs(10);
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                // Drain everything that arrived (global hotkey + in-window handler
+                // can both fire for one keypress) and treat it as a single toggle.
+                let mut got = false;
                 while rx.try_recv().is_ok() {
-                    let cur = *spotlight_visible.read();
-                    let next = !cur;
-                    if next {
-                        // Opening spotlight: start fresh, just the searchbar
-                        search_query.set(String::new());
-                        search_results.set(Vec::new());
-                    }
-                    spotlight_visible.set(next);
-                    active_step.set(1);
-                    println!("[spotlight] toggled visible -> {}", next);
+                    got = true;
                 }
+                if !got {
+                    continue;
+                }
+                // Debounce key auto-repeat while the shortcut is held.
+                if last.elapsed() < std::time::Duration::from_millis(350) {
+                    continue;
+                }
+                last = std::time::Instant::now();
+                let next = !*spotlight_visible.read();
+                if next {
+                    search_query.set(String::new());
+                    search_results.set(Vec::new());
+                }
+                spotlight_visible.set(next);
+                active_step.set(1);
+                println!("[spotlight] toggled visible -> {}", next);
             }
         });
 
@@ -502,7 +513,11 @@ fn app() -> Element {
             let receiver = GlobalHotKeyEvent::receiver();
             loop {
                 if let Ok(event) = receiver.recv() {
-                    if event.id == hotkey.id() {
+                    // Fire on press only; the release event would otherwise toggle
+                    // again and cancel the open.
+                    if event.id == hotkey.id()
+                        && event.state == global_hotkey::HotKeyState::Pressed
+                    {
                         let _ = tx_x11.send(());
                     }
                 }
