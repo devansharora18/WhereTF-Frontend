@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,6 +8,18 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use walkdir::WalkDir;
 
 use crate::api;
+
+/// Bumped whenever the watcher changes the indexed file set (upload/delete/rename).
+/// The UI polls this to refresh the file list live.
+static CHANGE_TICK: AtomicU64 = AtomicU64::new(0);
+
+pub fn bump_change() {
+    CHANGE_TICK.fetch_add(1, Ordering::SeqCst);
+}
+
+pub fn change_tick() -> u64 {
+    CHANGE_TICK.load(Ordering::SeqCst)
+}
 
 static WATCHERS: std::sync::OnceLock<Arc<Mutex<HashMap<String, notify::RecommendedWatcher>>>> =
     std::sync::OnceLock::new();
@@ -73,7 +86,7 @@ async fn handle_created(path: &Path) {
     println!("[watcher] Created: {:?}", path);
     let p = path.to_string_lossy().to_string();
     match api::upload_file(&p).await {
-        Ok(r) => println!("[watcher] upload ok: {:?}", r),
+        Ok(r) => { println!("[watcher] upload ok: {:?}", r); bump_change(); }
         Err(e) => eprintln!("[watcher] upload failed for {:?}: {}", path, e),
     }
 }
@@ -100,7 +113,7 @@ async fn handle_modified(path: &Path) {
     // Use upload (which will create or update). The backend's process_file_task handles
     // existing file_path by setting state=processing and re-indexing.
     match api::upload_file(&p).await {
-        Ok(r) => println!("[watcher] re-index ok: {:?}", r),
+        Ok(r) => { println!("[watcher] re-index ok: {:?}", r); bump_change(); }
         Err(e) => eprintln!("[watcher] re-index failed for {:?}: {}", path, e),
     }
 }
@@ -110,7 +123,7 @@ async fn handle_deleted(path: &Path) {
     println!("[watcher] Deleted: {:?}", path);
     let p = path.to_string_lossy().to_string();
     match api::delete_file_by_path(&p).await {
-        Ok(r) => println!("[watcher] delete ok: {:?}", r),
+        Ok(r) => { println!("[watcher] delete ok: {:?}", r); bump_change(); }
         Err(e) => eprintln!("[watcher] delete failed for {:?}: {}", path, e),
     }
 }
@@ -120,7 +133,7 @@ async fn handle_moved(from: &Path, to: &Path) {
     let old = from.to_string_lossy().to_string();
     let new = to.to_string_lossy().to_string();
     match api::rename_file(&old, &new).await {
-        Ok(r) => println!("[watcher] rename ok: {:?}", r),
+        Ok(r) => { println!("[watcher] rename ok: {:?}", r); bump_change(); }
         Err(e) => {
             eprintln!("[watcher] rename failed: {}, trying upload+delete", e);
             // Fallback: upload new, delete old
@@ -147,8 +160,9 @@ pub async fn scan_folder(folder_path: &str) {
             Ok(hash) => match api::needs_indexing(&p, &hash).await {
                 Ok(true) => {
                     println!("[watcher] Indexing: {}", p);
-                    if let Err(e) = api::upload_file(&p).await {
-                        eprintln!("[watcher] Failed to index {}: {}", p, e);
+                    match api::upload_file(&p).await {
+                        Ok(_) => bump_change(),
+                        Err(e) => eprintln!("[watcher] Failed to index {}: {}", p, e),
                     }
                 }
                 Ok(false) => {
