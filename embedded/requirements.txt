@@ -1,0 +1,42 @@
+# Dependencies for the embedded backend sidecar (frozen with PyInstaller).
+# Deliberately excludes Postgres/Redis/Celery/pgvector (the embedded backend uses
+# SQLite + sqlite-vec and an in-process indexer).
+
+# --- server ---
+fastapi
+uvicorn
+python-multipart
+
+# --- embedded vector store ---
+sqlite-vec
+
+# --- embeddings / models ---
+sentence-transformers
+transformers==4.44.2
+torch
+torchvision
+einops
+timm
+numpy
+
+# --- OCR / images ---
+easyocr
+opencv-python-headless
+scipy
+scikit-image
+python-bidi
+pyclipper
+Shapely
+ninja
+Pillow
+
+# --- text / docs ---
+nltk
+pdfplumber
+python-docx
+python-pptx
+openpyxl
+lxml
+
+# --- packaging ---
+pyinstaller
