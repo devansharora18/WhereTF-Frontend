@@ -46,11 +46,14 @@ jobs:
           python-version: "3.11"
       - name: Build sidecar (PyInstaller, CPU torch)
         shell: bash
+        env:
+          NLTK_DATA: ${{ github.workspace }}/embedded/nltk_data
         run: |
           set -e
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r embedded/requirements.txt
           pip install pyinstaller sqlite-vec
-          python -m nltk.downloader punkt punkt_tab wordnet omw-1.4 || true
+          # Download NLTK into the repo so the spec (which reads NLTK_DATA) bundles it.
+          python -m nltk.downloader -d embedded/nltk_data punkt punkt_tab wordnet omw-1.4 || true
           cd embedded
           pyinstaller wheretf-backend.spec --noconfirm --clean \
             --distpath dist --workpath build
