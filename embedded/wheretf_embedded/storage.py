@@ -15,12 +15,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-# Prefer pysqlite3 when available: the macOS system sqlite3 is built without
-# loadable-extension support, so sqlite-vec can't load there otherwise.
+# Prefer pysqlite3 when available (some systems ship a sqlite3 without
+# loadable-extension support). Falls back to the stdlib.
 try:
     import pysqlite3 as sqlite3  # type: ignore
 except Exception:
     sqlite3 = _stdlib_sqlite3  # type: ignore
+
+try:
+    import numpy as _np  # type: ignore
+except Exception:  # pragma: no cover
+    _np = None
+
+# Whether sqlite-vec (fast vector math) and FTS5 (keyword) are available.
+_HAS_VEC = False
+_HAS_FTS = False
 
 # ---- paths -----------------------------------------------------------------
 
@@ -51,27 +60,28 @@ _conn: sqlite3.Connection | None = None
 
 
 def connect() -> sqlite3.Connection:
-    global _conn
+    global _conn, _HAS_VEC
     if _conn is not None:
         return _conn
     conn = sqlite3.connect(str(db_path()), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    # Load the sqlite-vec extension for vector math.
+    # Try to load sqlite-vec for fast vector math. If the SQLite/Python can't
+    # load extensions (e.g. macOS system sqlite3), fall back to numpy search.
     try:
         import sqlite_vec  # type: ignore
 
-        if not hasattr(conn, "enable_load_extension"):
-            raise RuntimeError(
-                "this Python's sqlite3 was built without loadable-extension "
-                "support (common on macOS); install 'pysqlite3-binary'"
-            )
-        conn.enable_load_extension(True)
-        sqlite_vec.load(conn)
-        conn.enable_load_extension(False)
+        if hasattr(conn, "enable_load_extension"):
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+            _HAS_VEC = True
+            print("[storage] sqlite-vec loaded")
+        else:
+            print("[storage] no loadable-extension support; using numpy vector search")
     except Exception as exc:  # pragma: no cover
-        raise RuntimeError(f"sqlite-vec failed to load: {exc}") from exc
+        print(f"[storage] sqlite-vec unavailable ({exc}); using numpy vector search")
     _conn = conn
     return conn
 
@@ -106,8 +116,6 @@ def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS content_file_idx ON file_content(file_id);
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(content_text);
-
         CREATE TABLE IF NOT EXISTS file_relationships (
             source_file_id TEXT NOT NULL,
             target_file_id TEXT NOT NULL,
@@ -124,6 +132,15 @@ def init_db() -> None:
         """
     )
     conn.commit()
+    # FTS5 may not be compiled into the SQLite build; make it optional.
+    global _HAS_FTS
+    try:
+        conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(content_text)")
+        conn.commit()
+        _HAS_FTS = True
+    except Exception as exc:  # pragma: no cover
+        _HAS_FTS = False
+        print(f"[storage] FTS5 unavailable ({exc}); keyword search disabled")
     _ensure_vector_dim()
 
 
@@ -263,8 +280,9 @@ def delete_file_by_path(file_path: str) -> bool:
 
 def delete_by_id(file_id: str) -> None:
     conn = connect()
-    conn.execute("DELETE FROM content_fts WHERE rowid IN "
-                 "(SELECT rowid FROM file_content WHERE file_id=?)", (file_id,))
+    if _HAS_FTS:
+        conn.execute("DELETE FROM content_fts WHERE rowid IN "
+                     "(SELECT rowid FROM file_content WHERE file_id=?)", (file_id,))
     conn.execute("DELETE FROM file_content WHERE file_id=?", (file_id,))
     conn.execute("DELETE FROM file_relationships WHERE source_file_id=? OR target_file_id=?",
                  (file_id, file_id))
@@ -300,16 +318,18 @@ def update_metadata(file_id: str, tags: list[str] | None, context: str | None) -
 def replace_chunks(file_id: str, chunks: list[dict]) -> None:
     """chunks: [{chunk_index, content_text, embedding: list[float]}]"""
     conn = connect()
-    conn.execute("DELETE FROM content_fts WHERE rowid IN "
-                 "(SELECT rowid FROM file_content WHERE file_id=?)", (file_id,))
+    if _HAS_FTS:
+        conn.execute("DELETE FROM content_fts WHERE rowid IN "
+                     "(SELECT rowid FROM file_content WHERE file_id=?)", (file_id,))
     conn.execute("DELETE FROM file_content WHERE file_id=?", (file_id,))
     for c in chunks:
         cur = conn.execute(
             "INSERT INTO file_content(file_id,chunk_index,content_text,embedding) VALUES(?,?,?,?)",
             (file_id, c["chunk_index"], c["content_text"], serialize_vec(c["embedding"])),
         )
-        conn.execute("INSERT INTO content_fts(rowid,content_text) VALUES(?,?)",
-                     (cur.lastrowid, c["content_text"]))
+        if _HAS_FTS:
+            conn.execute("INSERT INTO content_fts(rowid,content_text) VALUES(?,?)",
+                         (cur.lastrowid, c["content_text"]))
     conn.execute("UPDATE files SET indexed_at=? WHERE id=?", (now_iso(), file_id))
     conn.commit()
 
@@ -324,21 +344,58 @@ def has_chunks(file_id: str) -> bool:
 
 def vector_search(query_vec: list[float], k: int) -> list[dict]:
     conn = connect()
-    q = serialize_vec(query_vec)
+    if _HAS_VEC:
+        q = serialize_vec(query_vec)
+        rows = conn.execute(
+            """
+            SELECT f.file_path, f.mime_type, f.tags, c.chunk_index, c.content_text,
+                   vec_distance_cosine(c.embedding, ?) AS dist
+            FROM file_content c JOIN files f ON f.id = c.file_id
+            WHERE c.embedding IS NOT NULL
+            ORDER BY dist ASC LIMIT ?
+            """,
+            (q, k),
+        ).fetchall()
+        return [_row_to_result(r, score=1.0 - float(r["dist"])) for r in rows]
+    return _vector_search_numpy(query_vec, k)
+
+
+def _vector_search_numpy(query_vec: list[float], k: int) -> list[dict]:
+    """Brute-force cosine search (fallback when sqlite-vec can't load)."""
+    conn = connect()
     rows = conn.execute(
         """
-        SELECT f.file_path, f.mime_type, f.tags, c.chunk_index, c.content_text,
-               vec_distance_cosine(c.embedding, ?) AS dist
+        SELECT f.file_path, f.mime_type, f.tags, c.chunk_index, c.content_text, c.embedding
         FROM file_content c JOIN files f ON f.id = c.file_id
         WHERE c.embedding IS NOT NULL
-        ORDER BY dist ASC LIMIT ?
-        """,
-        (q, k),
+        """
     ).fetchall()
-    return [_row_to_result(r, score=1.0 - float(r["dist"])) for r in rows]
+    if not rows:
+        return []
+    if _np is None:
+        # No numpy: decode + manual dot (slow, but works).
+        results = []
+        for r in rows:
+            vec = list(struct.unpack(f"<{len(r['embedding']) // 4}f", r["embedding"]))
+            dot = sum(a * b for a, b in zip(query_vec, vec))
+            results.append((dot, r))
+        results.sort(key=lambda t: t[0], reverse=True)
+        return [_row_to_result(r, score=max(0.0, s)) for s, r in results[:k]]
+
+    q = _np.asarray(query_vec, dtype=_np.float32)
+    qn = q / (float(_np.linalg.norm(q)) + 1e-12)
+    mat = _np.frombuffer(
+        b"".join(r["embedding"] for r in rows), dtype=_np.float32
+    ).reshape(len(rows), -1)
+    norms = _np.linalg.norm(mat, axis=1, keepdims=True) + 1e-12
+    sims = (mat / norms) @ qn
+    order = _np.argsort(-sims)[:k]
+    return [_row_to_result(rows[i], score=float(sims[i])) for i in order]
 
 
 def keyword_search(query: str, k: int) -> list[dict]:
+    if not _HAS_FTS:
+        return []
     conn = connect()
     # Escape FTS5 syntax by quoting each token.
     tokens = [t for t in "".join(ch if ch.isalnum() else " " for ch in query).split() if t]
@@ -358,7 +415,7 @@ def keyword_search(query: str, k: int) -> list[dict]:
             """,
             (match, k),
         ).fetchall()
-    except sqlite3.OperationalError:
+    except Exception:
         return []
     return [_row_to_result(r, score=1.0 / (1.0 + abs(float(r["rank"] or 0.0))))
             for r in rows]
