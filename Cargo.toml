@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = []
 bundled-backend = []
+embedded-backend = []
 
 [dependencies]
 dioxus = { version = "0.7.9", features = ["desktop"] }
