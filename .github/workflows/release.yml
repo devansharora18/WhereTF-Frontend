@@ -71,10 +71,24 @@ jobs:
             "dist/${{ matrix.out }}"
           ls -lh "dist/${{ matrix.out }}"
 
+      - name: Package macOS .app/.dmg
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: bash scripts/make_macos_app.sh "dist/${{ matrix.out }}" dist
+
+      - name: Package Linux AppImage
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: bash scripts/make_appimage.sh "dist/${{ matrix.out }}" dist/WhereTF.AppImage
+
       - uses: actions/upload-artifact@v4
         with:
           name: app-${{ matrix.os }}
-          path: dist/${{ matrix.out }}
+          path: |
+            dist/${{ matrix.out }}
+            dist/*.dmg
+            dist/*.AppImage
+          if-no-files-found: warn
           retention-days: 7
 
   release:
