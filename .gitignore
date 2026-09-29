@@ -23,3 +23,7 @@ Thumbs.db
 .env.local
 
 /WhereTF-backend
+
+# Embedded backend sidecar build output
+embedded/dist/
+embedded/build/
