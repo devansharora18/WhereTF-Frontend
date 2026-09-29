@@ -1,0 +1,92 @@
+name: release
+
+# Builds the embedded single-file app for Linux/macOS/Windows.
+# No backend repo access required: the backend engine is vendored in embedded/.
+# Trigger manually, or by pushing a tag like v0.1.0.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bin: wheretf-frontend
+            sidecar: wheretf-backend
+            out: WhereTF-linux
+          - os: macos-latest
+            bin: wheretf-frontend
+            sidecar: wheretf-backend
+            out: WhereTF-macos
+          - os: windows-latest
+            bin: wheretf-frontend.exe
+            sidecar: wheretf-backend.exe
+            out: WhereTF-windows.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- frontend toolchain ----
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux system deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config
+
+      # ---- python + sidecar ----
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build sidecar (PyInstaller, CPU torch)
+        shell: bash
+        run: |
+          set -e
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r embedded/requirements.txt
+          pip install pyinstaller sqlite-vec
+          python -m nltk.downloader punkt punkt_tab wordnet omw-1.4 || true
+          cd embedded
+          pyinstaller wheretf-backend.spec --noconfirm --clean \
+            --distpath dist --workpath build
+
+      # ---- build frontend + embed ----
+      - name: Build frontend
+        run: cargo build --release --features embedded-backend
+      - name: Embed sidecar
+        shell: bash
+        run: |
+          set -e
+          python scripts/embed_sidecar.py \
+            "target/release/${{ matrix.bin }}" \
+            "embedded/dist/${{ matrix.sidecar }}" \
+            "dist/${{ matrix.out }}"
+          ls -lh "dist/${{ matrix.out }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          path: dist/${{ matrix.out }}
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: app-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**
+          generate_release_notes: true
