@@ -96,31 +96,77 @@ DESK
 # Substitute the real path (avoid a placeholder that won't expand inside the heredoc)
 sed -i "s|SCRIPT_DIR/WhereTF|$SCRIPT_DIR/WhereTF|g" "$HOME/.local/share/applications/wheretf.desktop"
 
-# Check podman
-if ! command -v podman >/dev/null; then
-  echo "ERROR: podman not found. Please install podman first:"
-  echo "  Ubuntu/Debian: sudo apt-get install podman podman-compose"
-  echo "  Fedora: sudo dnf install podman podman-compose"
-  echo "  macOS: brew install podman"
-  echo "  Windows: winget install -e --id RedHat.Podman"
-  read -p "Press enter to exit..."
-  exit 1
+# --- detect a container runtime (podman preferred, docker accepted) ---
+RUNTIME=""
+if command -v podman >/dev/null 2>&1; then RUNTIME=podman
+elif command -v docker >/dev/null 2>&1; then RUNTIME=docker
+else
+  INSTALL_CMD=""
+  if command -v apt-get >/dev/null 2>&1; then INSTALL_CMD="sudo apt-get update && sudo apt-get install -y podman podman-compose"
+  elif command -v dnf >/dev/null 2>&1; then INSTALL_CMD="sudo dnf install -y podman podman-compose"
+  elif command -v pacman >/dev/null 2>&1; then INSTALL_CMD="sudo pacman -S --noconfirm podman podman-compose"
+  elif command -v zypper >/dev/null 2>&1; then INSTALL_CMD="sudo zypper install -y podman podman-compose"
+  elif command -v brew >/dev/null 2>&1; then INSTALL_CMD="brew install podman"
+  fi
+  echo "[launch] No container runtime found (podman or docker)."
+  if [ -n "$INSTALL_CMD" ]; then
+    echo "[launch] Detected your package manager. It will run:"
+    echo "         $INSTALL_CMD"
+    printf "Install it now? [y/N] "
+    read -r ANS 2>/dev/null </dev/tty || ANS=n
+    case "$ANS" in y|Y) eval "$INSTALL_CMD" || true ;; esac
+  fi
+  if command -v podman >/dev/null 2>&1; then RUNTIME=podman; fi
+  if [ -z "$RUNTIME" ] && command -v docker >/dev/null 2>&1; then RUNTIME=docker; fi
+  if [ -z "$RUNTIME" ]; then
+    echo "[launch] Still no runtime. Please install podman manually, then re-run:"
+    echo "  Ubuntu/Debian: sudo apt-get install podman podman-compose"
+    echo "  Fedora:        sudo dnf install podman podman-compose"
+    echo "  Arch:          sudo pacman -S podman podman-compose"
+    echo "  macOS:         brew install podman && podman machine init && podman machine start"
+    echo "  Windows:       winget install -e --id RedHat.Podman  (or install Docker Desktop)"
+    read -p "Press enter to exit..." _ 2>/dev/null || true
+    exit 1
+  fi
 fi
+echo "[launch] Using container runtime: $RUNTIME"
+
+# On macOS/Windows, podman needs a running VM; initialise it once.
+if [ "$RUNTIME" = "podman" ] && ! podman info >/dev/null 2>&1; then
+  echo "[launch] podman machine not running; initialising (one-time VM image download)..."
+  podman machine init || true
+  podman machine start || true
+fi
+
+# --- pick a compose provider ---
+compose_up() {
+  if command -v podman-compose >/dev/null 2>&1; then podman-compose up -d; return $?; fi
+  if command -v docker-compose >/dev/null 2>&1; then docker-compose up -d; return $?; fi
+  if [ "$RUNTIME" = "podman" ] && podman compose version >/dev/null 2>&1; then podman compose up -d; return $?; fi
+  if [ "$RUNTIME" = "docker" ] && docker compose version >/dev/null 2>&1; then docker compose up -d; return $?; fi
+  return 1
+}
+
 # Load offline images if needed (first run, no internet)
-if ! podman images --format "{{.Repository}}:{{.Tag}}" | grep -q "wheretf-backend"; then
+if ! $RUNTIME images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -q "wheretf-backend"; then
   if [ -f "$BACKEND_DIR/backend-images.tar" ]; then
-    echo "[launch] Loading offline images (1.9GB, ~30s)..."
-    podman load -i "$BACKEND_DIR/backend-images.tar"
+    echo "[launch] Loading offline images (1.9GB, ~1 min)..."
+    $RUNTIME load -i "$BACKEND_DIR/backend-images.tar"
   elif [ -f "$BACKEND_DIR/backend-images.tar.gz" ]; then
     echo "[launch] Loading gzipped offline images..."
-    podman load -i "$BACKEND_DIR/backend-images.tar.gz"
+    $RUNTIME load -i "$BACKEND_DIR/backend-images.tar.gz"
   else
-    echo "[launch] No bundled tar found, will pull from internet (requires network)..."
+    echo "[launch] No bundled image tar; will pull from the internet (requires network)."
   fi
 fi
 # Start backend
 echo "[launch] Starting backend (db + backend + redis + worker)..."
-(cd "$BACKEND_DIR" && podman-compose up -d || podman compose up -d || docker-compose up -d || docker compose up -d)
+if ! (cd "$BACKEND_DIR" && compose_up); then
+  echo "[launch] ERROR: no working compose provider (podman-compose / docker-compose)."
+  echo "         Try: pip install --user podman-compose"
+  read -p "Press enter to exit..." _ 2>/dev/null || true
+  exit 1
+fi
 echo "[launch] Waiting for backend health (up to 90s, first run downloads Jina CLIP ~300MB if not cached)..."
 for i in $(seq 1 45); do
   if curl -s --max-time 2 http://127.0.0.1:8000/health | grep -q healthy; then
@@ -144,27 +190,53 @@ chmod +x "$OFFLINE_DIR/launch.sh"
 # Create Windows launcher
 cat > "$OFFLINE_DIR/launch.bat" <<'BAT'
 @echo off
+setlocal
 set SCRIPT_DIR=%~dp0
 set BACKEND_DIR=%SCRIPT_DIR%WhereTF-backend
 echo === WhereTF Launcher (Windows) ===
-where podman >nul 2>&1
-if %errorlevel% neq 0 (
-  echo ERROR: podman not found. Install via: winget install -e --id RedHat.Podman
-  pause
-  exit /b 1
-)
-podman images --format "{{.Repository}}:{{.Tag}}" | findstr wheretf-backend >nul
-if %errorlevel% neq 0 (
-  if exist "%BACKEND_DIR%\backend-images.tar" (
-    echo [launch] Loading offline images...
-    podman load -i "%BACKEND_DIR%\backend-images.tar"
+
+rem Pick a runtime: prefer podman, fall back to docker.
+set RUNTIME=
+where podman >nul 2>&1 && set RUNTIME=podman
+if "%RUNTIME%"=="" ( where docker >nul 2>&1 && set RUNTIME=docker )
+
+if "%RUNTIME%"=="" (
+  echo No container runtime found ^(podman or docker^).
+  where winget >nul 2>&1
+  if %errorlevel% equ 0 (
+    set /p ANS=Install Podman via winget now? [y/N]:
+    if /i "%ANS%"=="y" (
+      winget install -e --id RedHat.Podman
+      echo Note: after install, open "Podman Desktop" once so its VM initialises.
+    )
+  )
+  where podman >nul 2>&1 && set RUNTIME=podman
+  if "%RUNTIME%"=="" ( where docker >nul 2>&1 && set RUNTIME=docker )
+  if "%RUNTIME%"=="" (
+    echo Please install Podman Desktop or Docker Desktop, then re-run launch.bat.
+    pause
+    exit /b 1
   )
 )
-echo [launch] Starting backend...
-cd /d "%BACKEND_DIR%" && podman-compose up -d || podman compose up -d
+echo [launch] Using container runtime: %RUNTIME%
+
+echo %RUNTIME% images --format "{{.Repository}}:{{.Tag}}" | findstr wheretf-backend >nul
+if %errorlevel% neq 0 (
+  if exist "%BACKEND_DIR%\backend-images.tar" (
+    echo [launch] Loading offline images ^(1.9GB, ~1 min^)...
+    %RUNTIME% load -i "%BACKEND_DIR%\backend-images.tar"
+  )
+)
+
+echo [launch] Starting backend ^(db + backend + redis + worker^)...
+cd /d "%BACKEND_DIR%"
+where podman-compose >nul 2>&1 && (podman-compose up -d) || (
+  where docker-compose >nul 2>&1 && (docker-compose up -d) || (%RUNTIME% compose up -d)
+)
 echo [launch] Waiting for backend...
 timeout /t 5 >nul
 start "" "%SCRIPT_DIR%WhereTF.exe"
+endlocal
 BAT
 
 # Create README
@@ -211,23 +283,57 @@ mkdir -p "$DIST"
 (cd "$DIST" && tar -czf WhereTF-offline.tar.gz WhereTF-offline)
 ls -lh "$DIST/WhereTF-offline.tar.gz"
 
-# Self-extracting shell installer (1-file, fully offline, ~1.9GB)
+# Self-extracting shell installer (single file; prompts for the tier)
 INSTALLER="$DIST/WhereTF-installer.sh"
 cat > "$INSTALLER" <<'HEADER'
 #!/usr/bin/env bash
-# WhereTF Offline Self-Extracting Installer
-# Usage: bash WhereTF-installer.sh [--target DIR]
+# WhereTF Offline Self-Extracting Installer (single file for all tiers)
+# Usage: bash WhereTF-installer.sh [--target DIR] [--tier lite|balanced|pro]
 set -e
-TARGET="${1:-$HOME/WhereTF}"
-if [ "$1" = "--target" ]; then TARGET="$2"; fi
+TARGET="$HOME/WhereTF"
+TIER=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --target) TARGET="$2"; shift 2 ;;
+    --tier)   TIER="$2";   shift 2 ;;
+    *) TARGET="$1"; shift ;;
+  esac
+done
 echo "=== WhereTF Offline Installer ==="
+
+if [ -z "$TIER" ]; then
+  echo ""
+  echo "Choose a backend tier (affects memory use and search quality):"
+  echo "  1) lite      - all-MiniLM-L6-v2, 384-dim, OCR          (~700 MB RAM)"
+  echo "  2) balanced  - nomic-embed-vision, 768-dim, vision     (~1.2 GB RAM, no OCR)"
+  echo "  3) pro       - jina-clip-v1, 768-dim, OCR + vision      (~2.0 GB RAM)"
+  echo ""
+  printf "Enter 1/2/3 (default 3=pro): "
+  read -r CHOICE </dev/tty || CHOICE=3
+  case "$CHOICE" in
+    1|lite) TIER=lite ;;
+    2|balanced) TIER=balanced ;;
+    *) TIER=pro ;;
+  esac
+fi
+case "$TIER" in lite|balanced|pro) ;; *) echo "Unknown tier '$TIER'; using pro"; TIER=pro ;; esac
+
+echo "Tier:   $TIER"
 echo "Target: $TARGET"
 mkdir -p "$TARGET"
 echo "Extracting..."
 ARCHIVE_LINE=$(awk '/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }' "$0")
 tail -n +$ARCHIVE_LINE "$0" | tar -xz -C "$TARGET"
+
+# Pin the chosen tier for both backend and worker.
+COMPOSE="$TARGET/WhereTF-offline/WhereTF-backend/docker-compose.yml"
+if [ -f "$COMPOSE" ]; then
+  sed -i "s/^\(\s*\)APP_TIER: .*/\1APP_TIER: $TIER/" "$COMPOSE"
+  echo "Configured APP_TIER=$TIER in bundled docker-compose.yml"
+fi
+
 echo "Installed to $TARGET"
-echo "Launching..."
+echo "Launching ($TIER)..."
 bash "$TARGET/WhereTF-offline/launch.sh"
 exit 0
 __ARCHIVE_BELOW__
