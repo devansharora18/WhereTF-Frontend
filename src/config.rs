@@ -6,12 +6,16 @@ const DEFAULT_SHORTCUT: &str = "Alt+K";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub spotlight_shortcut: String,
+    /// Backend tier chosen on first run: lite | balanced | pro.
+    #[serde(default)]
+    pub backend_tier: Option<String>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             spotlight_shortcut: DEFAULT_SHORTCUT.to_string(),
+            backend_tier: None,
         }
     }
 }
@@ -51,5 +55,15 @@ pub fn get_shortcut() -> String {
 pub fn set_shortcut(shortcut: &str) {
     let mut cfg = load();
     cfg.spotlight_shortcut = shortcut.to_string();
+    save(&cfg);
+}
+
+pub fn get_tier() -> Option<String> {
+    load().backend_tier
+}
+
+pub fn set_tier(tier: &str) {
+    let mut cfg = load();
+    cfg.backend_tier = Some(tier.to_string());
     save(&cfg);
 }

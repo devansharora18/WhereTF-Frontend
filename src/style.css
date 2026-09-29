@@ -120,3 +120,68 @@ body {
     opacity: 0.5;
     text-align: center;
 }
+
+/* First-run mode picker */
+.mode-picker {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-inner);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+}
+.mode-picker h2 {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.mode-cards { display: flex; gap: 18px; }
+.mode-card {
+    width: 220px;
+    padding: 22px 20px;
+    border: 1px solid rgba(119, 114, 103, 0.35);
+    border-radius: 14px;
+    background: #141818;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s, background 0.15s;
+}
+.mode-card:hover { border-color: var(--accent); transform: translateY(-2px); background: #181d1d; }
+.mode-card .m-name {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+.mode-card .m-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+}
+.mode-card .m-desc {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.mode-note { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); opacity: 0.6; }
+
+/* Loader spinner */
+.spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(119, 114, 103, 0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: wheretf-spin 0.9s linear infinite;
+}
+@keyframes wheretf-spin { to { transform: rotate(360deg); } }
+.backend-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }

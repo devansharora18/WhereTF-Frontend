@@ -1,6 +1,8 @@
 mod api;
 #[cfg(feature = "bundled-backend")]
 mod backend;
+#[cfg(feature = "embedded-backend")]
+mod embedded_backend;
 mod config;
 mod portal_shortcut;
 mod spotlight;
@@ -20,6 +22,9 @@ fn main() {
     // in WhereTF-backend/. Use `cargo run --features bundled-backend` for combined.
     #[cfg(feature = "bundled-backend")]
     backend::ensure_backend_blocking_spawn();
+
+    // Embedded mode: the backend is started from the app UI (after the user
+    // chooses a mode on first run) — see `app()`.
 
     let css = format!(
         "<style>{}{}{}{}{}{}{}{}{}{}</style>",
@@ -71,6 +76,34 @@ fn app() -> Element {
     let paused_folders = use_signal(|| std::collections::HashSet::<String>::new());
     let backend_ready = use_signal(|| false);
     let backend_error = use_signal(|| Option::<String>::None);
+
+    // --- embedded backend: first-run mode picker + spawn ---
+    let mut backend_tier = use_signal(|| config::get_tier());
+    let mut backend_started = use_signal(|| false);
+
+    #[cfg(feature = "embedded-backend")]
+    let show_mode_picker = backend_tier().is_none();
+    #[cfg(not(feature = "embedded-backend"))]
+    let show_mode_picker = false;
+
+    #[cfg(feature = "embedded-backend")]
+    use_effect(move || {
+        if let Some(t) = backend_tier() {
+            if !backend_started() {
+                backend_started.set(true);
+                println!("[embedded] chosen tier: {t}");
+                embedded_backend::ensure_spawn(&t);
+            }
+        }
+    });
+
+    let on_choose_tier = {
+        let mut backend_tier = backend_tier.clone();
+        move |tier: String| {
+            config::set_tier(&tier);
+            backend_tier.set(Some(tier));
+        }
+    };
 
     // Ensure backend is running.
     // - With `bundled-backend` feature (combined app): auto-starts via podman-compose
@@ -124,6 +157,12 @@ fn app() -> Element {
                     return;
                 }
             }
+            // Feature-aware message: embedded builds start the backend themselves.
+            #[cfg(feature = "embedded-backend")]
+            backend_error.set(Some(
+                "Loading the embedded backend (first launch extracts the runtime and may download the model).".to_string(),
+            ));
+            #[cfg(all(not(feature = "embedded-backend"), not(feature = "bundled-backend")))]
             backend_error.set(Some(
                 "Backend not running. Please start it with: cd WhereTF-backend && podman-compose up -d (or docker-compose up -d)".to_string(),
             ));
@@ -220,6 +259,48 @@ fn app() -> Element {
                 for folder in w {
                     watcher::watch_folder(folder.folder_path);
                 }
+            }
+        });
+    });
+
+    // Live refresh: poll the file list so watcher-indexed files (and their
+    // pending -> indexed state) show up without a manual reload.
+    use_effect(move || {
+        if !backend_ready() { return; }
+        let mut files = files.clone();
+        let mut file_count = file_count.clone();
+        spawn(async move {
+            let mut last_tick = watcher::change_tick();
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let tick = watcher::change_tick();
+                let changed = tick != last_tick;
+                last_tick = tick;
+                // Refresh on change immediately; also poll periodically so the
+                // pending -> indexed transition is reflected.
+                if let Ok(f) = api::get_all_files().await {
+                    let n = f.len() as u64;
+                    if changed || n != file_count() {
+                        file_count.set(n);
+                        files.set(f);
+                    } else {
+                        // still update list to catch state changes
+                        files.set(f);
+                    }
+                }
+            }
+        });
+    });
+
+    // Always refresh when opening the Files tab.
+    use_effect(move || {
+        if active_step() != 3 || !backend_ready() { return; }
+        let mut files = files.clone();
+        let mut file_count = file_count.clone();
+        spawn(async move {
+            if let Ok(f) = api::get_all_files().await {
+                file_count.set(f.len() as u64);
+                files.set(f);
             }
         });
     });
@@ -483,7 +564,10 @@ fn app() -> Element {
     // permitted). Uses the same trigger channel as X11/portal/tray.
     let spotlight_tx_inapp = spotlight_trigger.clone();
     let spotlight_inapp_handler = move |e: KeyboardEvent| {
-        if e.modifiers().alt() && e.code().to_string() == "KeyK" {
+        let code = e.code().to_string();
+        let key = e.key().to_string();
+        let is_k = code.eq_ignore_ascii_case("keyk") || key.eq_ignore_ascii_case("k");
+        if e.modifiers().alt() && is_k {
             let _ = spotlight_tx_inapp.send(());
         }
     };
@@ -545,6 +629,11 @@ fn app() -> Element {
         }
     });
 
+    #[cfg(feature = "embedded-backend")]
+    let backend_extra = "Runs locally from this binary — no podman needed. First launch extracts the runtime and may download the model; this can take a minute.";
+    #[cfg(all(not(feature = "embedded-backend"), not(feature = "bundled-backend")))]
+    let backend_extra = "Ensure podman and podman-compose are installed and WhereTF-backend/docker-compose.yml exists (or run: cd WhereTF-backend && podman-compose up -d).";
+
     let view_label = match active_step() {
         1 => "/ 01 \u{00B7} SEARCH".to_string(),
         2 => "/ 02 \u{00B7} FILTERS".to_string(),
@@ -558,19 +647,41 @@ fn app() -> Element {
         // floating window (ctrl + top spotlight_window handle) shown/hidden above.
         div { id: "main",
               onkeydown: spotlight_inapp_handler,
+              if show_mode_picker {
+                  div { class: "mode-picker",
+                      h2 { "Choose a mode" }
+                      div { class: "mode-cards",
+                          for (tier, name, tag, desc) in [
+                              ("lite", "Lite", "~700 MB RAM", "Fastest. Lightweight text model, OCR for images. Best on older machines."),
+                              ("balanced", "Balanced", "~1.2 GB RAM", "Middle ground. Text + vision embeddings; no OCR."),
+                              ("pro", "Pro", "~2 GB RAM", "Full quality. Jina CLIP text + vision, plus OCR. Needs more RAM."),
+                          ] {
+                              div {
+                                  class: "mode-card",
+                                  onclick: {
+                                      let mut handler = on_choose_tier.clone();
+                                      let t = tier.to_string();
+                                      move |_| handler(t.clone())
+                                  },
+                                  div { class: "m-name", "{name}" }
+                                  div { class: "m-tag", "{tag}" }
+                                  div { class: "m-desc", "{desc}" }
+                              }
+                          }
+                      }
+                      div { class: "mode-note", "First run downloads the model for the chosen mode. You can change it later, but files are re-indexed." }
+                  }
+              } else {
               div { class: "app-shell",
                 Header { view_label: view_label }
                 if !backend_ready() {
-                    div { class: "backend-loading", style: "padding: 48px; font-family: var(--font-mono); color: var(--text-secondary);",
+                    div { class: "backend-loading", style: "padding: 80px 48px;",
+                        div { class: "spinner" }
+                        div { style: "font-size: 14px;", "Starting backend…" }
                         if let Some(err) = backend_error.read().as_ref() {
-                            div { style: "color: #ff6b6b; margin-bottom: 12px;", "Backend failed to start:" }
-                            div { style: "font-size: 12px; word-break: break-all;", "{err}" }
-                            div { style: "margin-top: 16px; font-size: 12px;", "Ensure podman and podman-compose are installed and WhereTF-backend/docker-compose.yml exists." }
-                            div { style: "margin-top: 12px; font-size: 12px;", "You can also run manually: cd WhereTF-backend && podman-compose up -d" }
-                        } else {
-                            div { "Starting backend — db + api + redis + worker" }
-                            div { style: "margin-top: 8px; font-size: 12px; opacity: 0.7;", "First launch may take 60-90s (Jina CLIP model download)..." }
+                            div { style: "font-size: 12px; word-break: break-all; opacity: 0.7;", "{err}" }
                         }
+                        div { style: "font-size: 12px; opacity: 0.55;", "{backend_extra}" }
                     }
                 } else {
                     div { class: "app-body",
@@ -626,6 +737,7 @@ fn app() -> Element {
                 }
             }
             }
+        }
         }
     }
 }
