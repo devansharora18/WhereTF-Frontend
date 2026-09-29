@@ -23,5 +23,8 @@ hex = "0.4"
 walkdir = "2"
 global-hotkey = "0.6"
 dirs = "5"
+
+# XDG Desktop Portal global shortcuts (Linux/BSD only).
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 futures = "0.3"

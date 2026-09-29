@@ -4,6 +4,7 @@ mod backend;
 #[cfg(feature = "embedded-backend")]
 mod embedded_backend;
 mod config;
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
 mod portal_shortcut;
 mod spotlight;
 mod watcher;
@@ -527,7 +528,8 @@ fn app() -> Element {
         tx
     });
 
-    // #2 XDG Desktop Portal (GlobalShortcuts) - the Wayland/GNOME path.
+    // #2 XDG Desktop Portal (GlobalShortcuts) - the Wayland/GNOME path (Linux/BSD only).
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
     {
         let tx = spotlight_trigger.clone();
         let shortcut = config::get_shortcut();
