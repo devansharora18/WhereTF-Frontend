@@ -7,13 +7,20 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
+import sqlite3 as _stdlib_sqlite3
 import struct
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+# Prefer pysqlite3 when available: the macOS system sqlite3 is built without
+# loadable-extension support, so sqlite-vec can't load there otherwise.
+try:
+    import pysqlite3 as sqlite3  # type: ignore
+except Exception:
+    sqlite3 = _stdlib_sqlite3  # type: ignore
 
 # ---- paths -----------------------------------------------------------------
 
@@ -55,6 +62,11 @@ def connect() -> sqlite3.Connection:
     try:
         import sqlite_vec  # type: ignore
 
+        if not hasattr(conn, "enable_load_extension"):
+            raise RuntimeError(
+                "this Python's sqlite3 was built without loadable-extension "
+                "support (common on macOS); install 'pysqlite3-binary'"
+            )
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)

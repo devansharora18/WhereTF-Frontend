@@ -9,6 +9,8 @@ python-multipart
 
 # --- embedded vector store ---
 sqlite-vec
+# macOS system sqlite3 can't load extensions; this bundles one that can.
+pysqlite3-binary; platform_system != "Windows"
 
 # --- embeddings / models ---
 sentence-transformers

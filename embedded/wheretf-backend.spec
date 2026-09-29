@@ -24,6 +24,7 @@ for pkg in [
     "timm",
     "nltk",
     "sqlite_vec",
+    "pysqlite3",
     "sklearn",
     "scipy",
     "cv2",
